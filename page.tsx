@@ -1,192 +1,166 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { BookOpen, Clock, AlertTriangle, DollarSign, ArrowRight, BookMarked } from 'lucide-react';
+import { FileText, Download } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
-import Link from 'next/link';
 
 interface IssueRecord {
-  id: string; issueDate: string; dueDate: string; status: string;
-  book: { title: string; author: string; coverImage?: string | null };
+  id: string; issueDate: string; dueDate: string; returnDate: string | null; status: string;
+  user: { name: string; email: string };
+  book: { title: string; author: string; isbn: string };
   fine: { amount: number; status: string } | null;
 }
 
-export default function UserDashboard() {
-  const { data: session } = useSession();
+export default function AdminReportsPage() {
   const [issues, setIssues] = useState<IssueRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reportType, setReportType] = useState('all');
 
-  useEffect(() => {
-    fetch('/api/borrow/history')
-      .then(r => r.json())
-      .then(json => { if (json.success) setIssues(json.data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+  useEffect(() => { fetchData(); }, [reportType]);
 
-  const activeIssues = issues.filter(i => i.status === 'ISSUED' || i.status === 'OVERDUE');
-  const overdueCount = issues.filter(i => i.status === 'OVERDUE').length;
-  const pendingFines = issues.filter(i => i.fine?.status === 'PENDING').reduce((acc, i) => acc + (i.fine?.amount || 0), 0);
+  const fetchData = async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (reportType === 'overdue')  params.set('status', 'OVERDUE');
+    if (reportType === 'issued')   params.set('status', 'ISSUED');
+    if (reportType === 'returned') params.set('status', 'RETURNED');
+    try {
+      const res = await fetch(`/api/borrow/history?${params}`);
+      const json = await res.json();
+      if (json.success) setIssues(json.data);
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  };
 
-  if (loading) return (
-    <div className="animate-fade-in">
-      <div className="skeleton" style={{ height: 120, borderRadius: 16, marginBottom: '1.5rem' }} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-        {[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 12 }} />)}
-      </div>
-      <div className="skeleton" style={{ height: 300, borderRadius: 12 }} />
-    </div>
-  );
+  const exportCSV = () => {
+    const headers = 'Book,Author,Member,Issue Date,Due Date,Return Date,Status,Fine\n';
+    const rows = issues.map(i =>
+      `"${i.book.title}","${i.book.author}","${i.user.name}","${formatDate(i.issueDate)}","${formatDate(i.dueDate)}","${i.returnDate ? formatDate(i.returnDate) : ''}","${i.status}","${i.fine ? '₹' + i.fine.amount : ''}"`
+    ).join('\n');
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `library-report-${reportType}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
-  const firstName = session?.user?.name?.split(' ')[0] || 'Member';
+  const reportTabs = [
+    { key: 'all',      label: 'All Records',       color: 'var(--accent)',   bg: 'var(--accent-light)' },
+    { key: 'issued',   label: 'Currently Issued',   color: '#3B82F6',         bg: '#DBEAFE' },
+    { key: 'overdue',  label: 'Overdue',             color: '#EF4444',         bg: '#FEE2E2' },
+    { key: 'returned', label: 'Returned',            color: '#10B981',         bg: '#D1FAE5' },
+  ];
 
   return (
     <div className="animate-fade-in">
-      {/* Welcome Banner */}
-      <div className="welcome-banner">
-        <div className="welcome-banner-content">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h2>Good {getGreeting()}, {firstName}! 👋</h2>
-              <p>Here's a summary of your library activity</p>
+      <div className="page-header-actions">
+        <div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+            Reports
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Generate and export library transaction reports
+          </p>
+        </div>
+        <button onClick={exportCSV} disabled={issues.length === 0} className="btn btn-secondary">
+          <Download size={16} /> Export CSV
+        </button>
+      </div>
+
+      {/* Filter Tabs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        {reportTabs.map(r => (
+          <button
+            key={r.key}
+            onClick={() => setReportType(r.key)}
+            style={{
+              padding: '1rem', borderRadius: 12, textAlign: 'left',
+              border: reportType === r.key ? `2px solid ${r.color}` : '1.5px solid var(--border)',
+              background: reportType === r.key ? r.bg : 'var(--bg-surface)',
+              cursor: 'pointer', transition: 'all 0.18s ease',
+              boxShadow: reportType === r.key ? `0 2px 12px rgba(0,0,0,0.08)` : 'var(--shadow-sm)',
+            }}
+          >
+            <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: reportType === r.key ? r.color : 'var(--text-muted)', marginBottom: '0.375rem' }}>
+              {r.label}
             </div>
-            <Link href="/user/catalog" className="btn" style={{
-              background: 'rgba(255,255,255,0.15)', color: 'white',
-              border: '1px solid rgba(255,255,255,0.25)',
-              backdropFilter: 'blur(8px)',
-            }}>
-              <BookOpen size={16} />
-              Browse Books
-            </Link>
-          </div>
-        </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: reportType === r.key ? r.color : 'var(--text-primary)' }}>
+              {issues.length}
+            </div>
+          </button>
+        ))}
       </div>
 
-      {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1.75rem' }}>
-        <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: '#EEF2FF' }}>
-            <BookMarked size={20} color="#4F46E5" />
-          </div>
-          <div className="stat-card-label">Currently Borrowed</div>
-          <div className="stat-card-value">{activeIssues.length}</div>
-          <div className="stat-card-trend">books in hand</div>
-        </div>
-
-        <div className="stat-card" style={{ borderColor: overdueCount > 0 ? '#FCA5A5' : 'var(--border)' }}>
-          <div className="stat-card-icon" style={{ background: overdueCount > 0 ? '#FEE2E2' : '#F3F4F6' }}>
-            <AlertTriangle size={20} color={overdueCount > 0 ? '#EF4444' : '#9CA3AF'} />
-          </div>
-          <div className="stat-card-label">Overdue Books</div>
-          <div className="stat-card-value" style={{ color: overdueCount > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-            {overdueCount}
-          </div>
-          <div className="stat-card-trend">{overdueCount > 0 ? '⚠️ Please return soon' : 'all on time'}</div>
-        </div>
-
-        <div className="stat-card" style={{ borderColor: pendingFines > 0 ? '#FDE68A' : 'var(--border)' }}>
-          <div className="stat-card-icon" style={{ background: pendingFines > 0 ? '#FEF3C7' : '#F3F4F6' }}>
-            <DollarSign size={20} color={pendingFines > 0 ? '#F59E0B' : '#9CA3AF'} />
-          </div>
-          <div className="stat-card-label">Pending Fines</div>
-          <div className="stat-card-value" style={{ color: pendingFines > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
-            ₹{pendingFines.toFixed(0)}
-          </div>
-          <div className="stat-card-trend">{pendingFines > 0 ? 'needs payment' : 'no dues'}</div>
-        </div>
-      </div>
-
-      {/* Currently Borrowed */}
+      {/* Table */}
       <div className="table-wrapper">
         <div className="table-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <div className="content-card-icon" style={{ background: 'var(--accent-light)' }}>
-              <Clock size={15} color="var(--accent)" />
-            </div>
-            <div>
-              <div className="card-title">Currently Borrowed</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{activeIssues.length} active {activeIssues.length === 1 ? 'book' : 'books'}</div>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <FileText size={16} color="var(--text-muted)" />
+            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9375rem' }}>
+              {issues.length} {reportTabs.find(r => r.key === reportType)?.label} Records
+            </span>
           </div>
-          <Link href="/user/history" className="btn btn-secondary btn-sm">
-            View All History <ArrowRight size={13} />
-          </Link>
         </div>
 
-        {activeIssues.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon"><BookOpen size={22} /></div>
-            <h3>No books borrowed</h3>
-            <p>You don't have any books currently. Browse the catalog to find something to read!</p>
-            <Link href="/user/catalog" className="btn btn-primary" style={{ marginTop: '1rem' }}>
-              Browse Catalog
-            </Link>
-          </div>
-        ) : (
-          <div>
-            {activeIssues.map((issue, i) => {
-              const daysLeft = Math.ceil((new Date(issue.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-              const isOverdue = daysLeft < 0;
-              return (
-                <div key={issue.id} className="issue-row animate-fade-in" style={{ animationDelay: `${i * 0.04}s` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-                    <div style={{
-                      width: 42, height: 42, borderRadius: 10, flexShrink: 0,
-                      overflow: 'hidden',
-                      position: 'relative',
-                    }}>
-                      {issue.book.coverImage ? (
-                        <img src={issue.book.coverImage} alt={issue.book.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{
-                          width: '100%', height: '100%',
-                          background: `hsl(${(i * 67) % 360}, 70%, 92%)`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <BookOpen size={18} color={`hsl(${(i * 67) % 360}, 60%, 40%)`} />
-                        </div>
-                      )}
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Book</th>
+                <th>Member</th>
+                <th>Issue Date</th>
+                <th>Due Date</th>
+                <th>Return Date</th>
+                <th>Status</th>
+                <th>Fine</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                [...Array(5)].map((_, i) => (
+                  <tr key={i}>{[...Array(7)].map((_, j) => <td key={j}><div className="skeleton" style={{ height: 16, borderRadius: 4 }} /></td>)}</tr>
+                ))
+              ) : issues.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">
+                      <div className="empty-state-icon"><FileText size={22} /></div>
+                      <h3>No records found</h3>
+                      <p>No transactions match the selected report type.</p>
                     </div>
-                    <div>
-                      <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{issue.book.title}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 1 }}>
-                        {issue.book.author} · Due: {formatDate(issue.dueDate)}
-                      </div>
-                    </div>
-                  </div>
-                  <span className={`badge ${isOverdue ? 'badge-red' : daysLeft <= 3 ? 'badge-yellow' : 'badge-green'}`}>
-                    {isOverdue ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Quick Actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginTop: '1.25rem' }}>
-        {[
-          { href: '/user/catalog',  icon: '📚', label: 'Browse Catalog',  desc: 'Find your next book' },
-          { href: '/user/history',  icon: '🕐', label: 'Borrow History',  desc: 'Past borrowings' },
-          { href: '/user/fines',    icon: '💳', label: 'My Fines',        desc: 'View & pay fines' },
-        ].map(action => (
-          <Link key={action.href} href={action.href} style={{ textDecoration: 'none' }}>
-            <div className="stat-card" style={{ cursor: 'pointer', textAlign: 'center' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{action.icon}</div>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.125rem' }}>{action.label}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{action.desc}</div>
-            </div>
-          </Link>
-        ))}
+                  </td>
+                </tr>
+              ) : issues.map(issue => (
+                <tr key={issue.id}>
+                  <td>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{issue.book.title}</div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{issue.book.author}</div>
+                  </td>
+                  <td>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--text-primary)' }}>{issue.user.name}</div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>{issue.user.email}</div>
+                  </td>
+                  <td className="td-secondary">{formatDate(issue.issueDate)}</td>
+                  <td className="td-secondary">{formatDate(issue.dueDate)}</td>
+                  <td className="td-secondary">{issue.returnDate ? formatDate(issue.returnDate) : '—'}</td>
+                  <td>
+                    {issue.status === 'ISSUED'   && <span className="badge badge-blue">Issued</span>}
+                    {issue.status === 'OVERDUE'  && <span className="badge badge-red">Overdue</span>}
+                    {issue.status === 'RETURNED' && <span className="badge badge-green">Returned</span>}
+                  </td>
+                  <td>
+                    {issue.fine ? (
+                      <span style={{ color: 'var(--warning)', fontWeight: 600, fontSize: '0.875rem' }}>₹{issue.fine.amount}</span>
+                    ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
-}
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Morning';
-  if (h < 17) return 'Afternoon';
-  return 'Evening';
 }
