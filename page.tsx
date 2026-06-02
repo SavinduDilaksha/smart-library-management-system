@@ -1,192 +1,181 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { BookOpen, Clock, AlertTriangle, DollarSign, ArrowRight, BookMarked } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
+import { BookOpen, Loader2, XCircle, Clock, CheckCircle2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { formatDate } from '@/lib/utils';
 
-interface IssueRecord {
-  id: string; issueDate: string; dueDate: string; status: string;
-  book: { title: string; author: string; coverImage?: string | null };
-  fine: { amount: number; status: string } | null;
+interface RequestRecord {
+  id: string;
+  bookId: string;
+  requestDate: string;
+  status: string;
+  book: {
+    id: string;
+    title: string;
+    author: string;
+    category: string;
+    coverImage: string | null;
+  };
 }
 
-export default function UserDashboard() {
-  const { data: session } = useSession();
-  const [issues, setIssues] = useState<IssueRecord[]>([]);
+export default function UserBorrowRequestsPage() {
+  const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
+
+  const fetchRequests = async () => {
+    try {
+      const res = await fetch('/api/borrow/request');
+      const json = await res.json();
+      if (json.success) {
+        // Show PENDING and APPROVED requests.
+        // Once ISSUED, they clear from here and move to Return Status.
+        setRequests(json.data.filter((r: RequestRecord) => ['PENDING', 'APPROVED'].includes(r.status)));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/borrow/history')
-      .then(r => r.json())
-      .then(json => { if (json.success) setIssues(json.data); setLoading(false); })
-      .catch(() => setLoading(false));
+    fetchRequests();
   }, []);
 
-  const activeIssues = issues.filter(i => i.status === 'ISSUED' || i.status === 'OVERDUE');
-  const overdueCount = issues.filter(i => i.status === 'OVERDUE').length;
-  const pendingFines = issues.filter(i => i.fine?.status === 'PENDING').reduce((acc, i) => acc + (i.fine?.amount || 0), 0);
-
-  if (loading) return (
-    <div className="animate-fade-in">
-      <div className="skeleton" style={{ height: 120, borderRadius: 16, marginBottom: '1.5rem' }} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-        {[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 12 }} />)}
-      </div>
-      <div className="skeleton" style={{ height: 300, borderRadius: 12 }} />
-    </div>
-  );
-
-  const firstName = session?.user?.name?.split(' ')[0] || 'Member';
+  const handleCancel = async (requestId: string) => {
+    if (!window.confirm('Are you sure you want to cancel this borrow request?')) return;
+    setCancellingId(requestId); setError(''); setSuccess('');
+    try {
+      const res = await fetch(`/api/borrow/request/${requestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'CANCEL' }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSuccess('Request cancelled successfully.');
+        fetchRequests();
+      } else {
+        setError(json.error || 'Failed to cancel request');
+      }
+    } catch {
+      setError('Error cancelling request. Please try again.');
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   return (
     <div className="animate-fade-in">
-      {/* Welcome Banner */}
-      <div className="welcome-banner">
-        <div className="welcome-banner-content">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h2>Good {getGreeting()}, {firstName}! 👋</h2>
-              <p>Here's a summary of your library activity</p>
-            </div>
-            <Link href="/user/catalog" className="btn" style={{
-              background: 'rgba(255,255,255,0.15)', color: 'white',
-              border: '1px solid rgba(255,255,255,0.25)',
-              backdropFilter: 'blur(8px)',
-            }}>
-              <BookOpen size={16} />
-              Browse Books
-            </Link>
-          </div>
-        </div>
+      <div className="page-header">
+        <h1>My Borrow Requests</h1>
+        <p>Track your active online reservations and book pickup requests</p>
       </div>
 
-      {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1.75rem' }}>
-        <div className="stat-card">
-          <div className="stat-card-icon" style={{ background: '#EEF2FF' }}>
-            <BookMarked size={20} color="#4F46E5" />
-          </div>
-          <div className="stat-card-label">Currently Borrowed</div>
-          <div className="stat-card-value">{activeIssues.length}</div>
-          <div className="stat-card-trend">books in hand</div>
+      {success && (
+        <div className="alert alert-success animate-scale-in" style={{ marginBottom: '1.5rem' }}>
+          <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+          <span>{success}</span>
         </div>
+      )}
 
-        <div className="stat-card" style={{ borderColor: overdueCount > 0 ? '#FCA5A5' : 'var(--border)' }}>
-          <div className="stat-card-icon" style={{ background: overdueCount > 0 ? '#FEE2E2' : '#F3F4F6' }}>
-            <AlertTriangle size={20} color={overdueCount > 0 ? '#EF4444' : '#9CA3AF'} />
-          </div>
-          <div className="stat-card-label">Overdue Books</div>
-          <div className="stat-card-value" style={{ color: overdueCount > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
-            {overdueCount}
-          </div>
-          <div className="stat-card-trend">{overdueCount > 0 ? '⚠️ Please return soon' : 'all on time'}</div>
+      {error && (
+        <div className="alert alert-danger animate-scale-in" style={{ marginBottom: '1.5rem' }}>
+          <XCircle size={16} style={{ flexShrink: 0 }} />
+          <span>{error}</span>
         </div>
+      )}
 
-        <div className="stat-card" style={{ borderColor: pendingFines > 0 ? '#FDE68A' : 'var(--border)' }}>
-          <div className="stat-card-icon" style={{ background: pendingFines > 0 ? '#FEF3C7' : '#F3F4F6' }}>
-            <DollarSign size={20} color={pendingFines > 0 ? '#F59E0B' : '#9CA3AF'} />
-          </div>
-          <div className="stat-card-label">Pending Fines</div>
-          <div className="stat-card-value" style={{ color: pendingFines > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
-            ₹{pendingFines.toFixed(0)}
-          </div>
-          <div className="stat-card-trend">{pendingFines > 0 ? 'needs payment' : 'no dues'}</div>
+      {loading ? (
+        <div className="table-wrapper" style={{ padding: '2rem', display: 'flex', justifyContent: 'center' }}>
+          <Loader2 className="animate-spin" size={24} color="var(--accent)" />
         </div>
-      </div>
-
-      {/* Currently Borrowed */}
-      <div className="table-wrapper">
-        <div className="table-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <div className="content-card-icon" style={{ background: 'var(--accent-light)' }}>
-              <Clock size={15} color="var(--accent)" />
-            </div>
-            <div>
-              <div className="card-title">Currently Borrowed</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{activeIssues.length} active {activeIssues.length === 1 ? 'book' : 'books'}</div>
-            </div>
-          </div>
-          <Link href="/user/history" className="btn btn-secondary btn-sm">
-            View All History <ArrowRight size={13} />
+      ) : requests.length === 0 ? (
+        <div className="empty-state" style={{ padding: '4rem 1.5rem' }}>
+          <div className="empty-state-icon"><BookOpen size={24} /></div>
+          <h3>No active requests</h3>
+          <p style={{ marginBottom: '1.5rem' }}>You do not have any pending or approved borrow requests at this time.</p>
+          <Link href="/user/catalog" className="btn btn-primary">
+            Browse Catalog to Request <ArrowRight size={14} />
           </Link>
         </div>
-
-        {activeIssues.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon"><BookOpen size={22} /></div>
-            <h3>No books borrowed</h3>
-            <p>You don't have any books currently. Browse the catalog to find something to read!</p>
-            <Link href="/user/catalog" className="btn btn-primary" style={{ marginTop: '1rem' }}>
-              Browse Catalog
-            </Link>
-          </div>
-        ) : (
-          <div>
-            {activeIssues.map((issue, i) => {
-              const daysLeft = Math.ceil((new Date(issue.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-              const isOverdue = daysLeft < 0;
-              return (
-                <div key={issue.id} className="issue-row animate-fade-in" style={{ animationDelay: `${i * 0.04}s` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-                    <div style={{
-                      width: 42, height: 42, borderRadius: 10, flexShrink: 0,
-                      overflow: 'hidden',
-                      position: 'relative',
-                    }}>
-                      {issue.book.coverImage ? (
-                        <img src={issue.book.coverImage} alt={issue.book.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{
-                          width: '100%', height: '100%',
-                          background: `hsl(${(i * 67) % 360}, 70%, 92%)`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <BookOpen size={18} color={`hsl(${(i * 67) % 360}, 60%, 40%)`} />
+      ) : (
+        <div className="table-wrapper">
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Book Details</th>
+                  <th>Category</th>
+                  <th>Request Date</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((req, i) => (
+                  <tr key={req.id} className="animate-fade-in" style={{ animationDelay: `${i * 0.05}s` }}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ width: 44, height: 60, borderRadius: 4, overflow: 'hidden', flexShrink: 0, position: 'relative', border: '1px solid var(--border-light)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                          {req.book.coverImage ? (
+                            <img src={req.book.coverImage} alt={req.book.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', background: 'var(--bg-surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+                              📚
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{issue.book.title}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 1 }}>
-                        {issue.book.author} · Due: {formatDate(issue.dueDate)}
+                        <div>
+                          <Link href={`/user/books/${req.book.id}`} style={{ textDecoration: 'none', fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>
+                            {req.book.title}
+                          </Link>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>by {req.book.author}</div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <span className={`badge ${isOverdue ? 'badge-red' : daysLeft <= 3 ? 'badge-yellow' : 'badge-green'}`}>
-                    {isOverdue ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`}
-                  </span>
-                </div>
-              );
-            })}
+                    </td>
+                    <td>
+                      <span className="badge badge-indigo">{req.book.category}</span>
+                    </td>
+                    <td className="td-secondary">{formatDate(req.requestDate)}</td>
+                    <td>
+                      {req.status === 'PENDING' ? (
+                        <span className="badge badge-indigo" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <Clock size={12} /> Pending Review
+                        </span>
+                      ) : (
+                        <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <CheckCircle2 size={12} /> Ready for Pickup
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {req.status === 'PENDING' && (
+                        <button
+                          onClick={() => handleCancel(req.id)}
+                          disabled={cancellingId === req.id}
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: 'var(--danger)', borderColor: 'var(--danger-light)' }}
+                        >
+                          {cancellingId === req.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            'Cancel Request'
+                          )}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
-
-      {/* Quick Actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginTop: '1.25rem' }}>
-        {[
-          { href: '/user/catalog',  icon: '📚', label: 'Browse Catalog',  desc: 'Find your next book' },
-          { href: '/user/history',  icon: '🕐', label: 'Borrow History',  desc: 'Past borrowings' },
-          { href: '/user/fines',    icon: '💳', label: 'My Fines',        desc: 'View & pay fines' },
-        ].map(action => (
-          <Link key={action.href} href={action.href} style={{ textDecoration: 'none' }}>
-            <div className="stat-card" style={{ cursor: 'pointer', textAlign: 'center' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{action.icon}</div>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.125rem' }}>{action.label}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{action.desc}</div>
-            </div>
-          </Link>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
-}
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Morning';
-  if (h < 17) return 'Afternoon';
-  return 'Evening';
 }
