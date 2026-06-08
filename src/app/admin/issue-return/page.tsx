@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileText, Download } from 'lucide-react';
+import { ArrowLeftRight } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
 interface IssueRecord {
@@ -11,19 +11,17 @@ interface IssueRecord {
   fine: { amount: number; status: string } | null;
 }
 
-export default function AdminReportsPage() {
+export default function AdminIssueReturnPage() {
   const [issues, setIssues] = useState<IssueRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reportType, setReportType] = useState('all');
+  const [filter, setFilter] = useState('');
 
-  useEffect(() => { fetchData(); }, [reportType]);
+  useEffect(() => { fetchIssues(); }, [filter]);
 
-  const fetchData = async () => {
+  const fetchIssues = async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (reportType === 'overdue')  params.set('status', 'OVERDUE');
-    if (reportType === 'issued')   params.set('status', 'ISSUED');
-    if (reportType === 'returned') params.set('status', 'RETURNED');
+    if (filter) params.set('status', filter);
     try {
       const res = await fetch(`/api/borrow/history?${params}`);
       const json = await res.json();
@@ -32,78 +30,26 @@ export default function AdminReportsPage() {
     finally { setLoading(false); }
   };
 
-  const exportCSV = () => {
-    const headers = 'Book,Author,Member,Issue Date,Due Date,Return Date,Status,Fine\n';
-    const rows = issues.map(i =>
-      `"${i.book.title}","${i.book.author}","${i.user.name}","${formatDate(i.issueDate)}","${formatDate(i.dueDate)}","${i.returnDate ? formatDate(i.returnDate) : ''}","${i.status}","${i.fine ? '₹' + i.fine.amount : ''}"`
-    ).join('\n');
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `library-report-${reportType}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const reportTabs = [
-    { key: 'all',      label: 'All Records',       color: 'var(--accent)',   bg: 'var(--accent-light)' },
-    { key: 'issued',   label: 'Currently Issued',   color: '#3B82F6',         bg: '#DBEAFE' },
-    { key: 'overdue',  label: 'Overdue',             color: '#EF4444',         bg: '#FEE2E2' },
-    { key: 'returned', label: 'Returned',            color: '#10B981',         bg: '#D1FAE5' },
-  ];
-
   return (
     <div className="animate-fade-in">
       <div className="page-header-actions">
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-            Reports
+            Issue & Return Overview
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-            Generate and export library transaction reports
+            All book transaction records
           </p>
         </div>
-        <button onClick={exportCSV} disabled={issues.length === 0} className="btn btn-secondary">
-          <Download size={16} /> Export CSV
-        </button>
+        <select value={filter} onChange={e => setFilter(e.target.value)} className="select" style={{ width: 'auto', minWidth: 140 }}>
+          <option value="">All Status</option>
+          <option value="ISSUED">Issued</option>
+          <option value="RETURNED">Returned</option>
+          <option value="OVERDUE">Overdue</option>
+        </select>
       </div>
 
-      {/* Filter Tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        {reportTabs.map(r => (
-          <button
-            key={r.key}
-            onClick={() => setReportType(r.key)}
-            style={{
-              padding: '1rem', borderRadius: 12, textAlign: 'left',
-              border: reportType === r.key ? `2px solid ${r.color}` : '1.5px solid var(--border)',
-              background: reportType === r.key ? r.bg : 'var(--bg-surface)',
-              cursor: 'pointer', transition: 'all 0.18s ease',
-              boxShadow: reportType === r.key ? `0 2px 12px rgba(0,0,0,0.08)` : 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: reportType === r.key ? r.color : 'var(--text-muted)', marginBottom: '0.375rem' }}>
-              {r.label}
-            </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: reportType === r.key ? r.color : 'var(--text-primary)' }}>
-              {issues.length}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Table */}
       <div className="table-wrapper">
-        <div className="table-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <FileText size={16} color="var(--text-muted)" />
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9375rem' }}>
-              {issues.length} {reportTabs.find(r => r.key === reportType)?.label} Records
-            </span>
-          </div>
-        </div>
-
         <div className="table-container">
           <table>
             <thead>
@@ -126,9 +72,9 @@ export default function AdminReportsPage() {
                 <tr>
                   <td colSpan={7}>
                     <div className="empty-state">
-                      <div className="empty-state-icon"><FileText size={22} /></div>
-                      <h3>No records found</h3>
-                      <p>No transactions match the selected report type.</p>
+                      <div className="empty-state-icon"><ArrowLeftRight size={22} /></div>
+                      <h3>No transactions found</h3>
+                      <p>No issue/return records match your filter.</p>
                     </div>
                   </td>
                 </tr>
@@ -152,8 +98,10 @@ export default function AdminReportsPage() {
                   </td>
                   <td>
                     {issue.fine ? (
-                      <span style={{ color: 'var(--warning)', fontWeight: 600, fontSize: '0.875rem' }}>₹{issue.fine.amount}</span>
-                    ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      <span className={`badge ${issue.fine.status === 'PAID' ? 'badge-green' : issue.fine.status === 'WAIVED' ? 'badge-gray' : 'badge-yellow'}`}>
+                        ₹{issue.fine.amount} · {issue.fine.status}
+                      </span>
+                    ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
                   </td>
                 </tr>
               ))}
