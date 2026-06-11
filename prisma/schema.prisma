@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  password       String
+  role           String          @default("MEMBER")
+  phone          String?
+  status         String          @default("ACTIVE")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  issues         Issue[]
+  fines          Fine[]
+  notifications  Notification[]
+  activities     Activity[]
+  borrowRequests BorrowRequest[]
+}
+
+model Book {
+  id             String          @id @default(cuid())
+  title          String
+  author         String
+  isbn           String          @unique
+  category       String
+  publisher      String?
+  quantity       Int             @default(1)
+  available      Int             @default(1)
+  description    String?
+  coverImage     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  issues         Issue[]
+  borrowRequests BorrowRequest[]
+}
+
+model Issue {
+  id         String    @id @default(cuid())
+  userId     String
+  bookId     String
+  issueDate  DateTime  @default(now())
+  dueDate    DateTime
+  returnDate DateTime?
+  status     String    @default("ISSUED")
+  user       User      @relation(fields: [userId], references: [id])
+  book       Book      @relation(fields: [bookId], references: [id])
+  fine       Fine?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Fine {
+  id        String   @id @default(cuid())
+  issueId   String   @unique
+  userId    String
+  amount    Float
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  issue     Issue    @relation(fields: [issueId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Settings {
+  id                       String @id @default("default")
+  finePerDay               Float  @default(5.0)
+  maxBorrowDays            Int    @default(14)
+  maxBooksPerUser          Int    @default(5)
+  libraryName              String @default("City Library")
+  maxOnlineRequestsPerUser Int    @default(3)
+  maxOnlineCopiesPerBook   Int    @default(3)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  message   String
+  type      String
+  sentAt    DateTime @default(now())
+  read      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   String?
+  timestamp DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model BorrowRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  bookId      String
+  requestDate DateTime @default(now())
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED, ISSUED, CANCELLED
+  user        User     @relation(fields: [userId], references: [id])
+  book        Book     @relation(fields: [bookId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
